@@ -1,0 +1,7 @@
+# Vivado Cache
+*.cache/
+*.ip_user_files/
+*.runs/
+*.srcs/utils_1/imports/synth_1/
+*.sim/
+Merge_Sort_CPE593.xpr
