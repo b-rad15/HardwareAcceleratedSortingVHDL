@@ -21,17 +21,23 @@
 
 library ieee;
 use ieee.std_logic_1164.all;
+use ieee.numeric_std.all;
+
+-- using real number functions for generating random numbers, will not affect synthesis
+use ieee.math_real.uniform;
+use ieee.math_real.floor;
+
 use work.Types.all; -- from bitonic_sort.vhd
 
 entity bitonic_sort_tb is
 end bitonic_sort_tb;
 
 architecture behavior of bitonic_sort_tb is
-    constant N : positive := 16;
+    constant N : positive := scale_max;
     -- Component declaration for the Unit Under Test (UUT)
     component bitonic_sort is
         generic (
-            N : positive := 16  -- Number of items to sort
+            N : positive := scale_max  -- Number of items to sort
         );
         port (
             clk     : in  std_logic;
@@ -49,8 +55,8 @@ architecture behavior of bitonic_sort_tb is
     signal sorted : input_array(0 to N-1);
     signal done : std_logic;
 
-    -- Clock period for the test bench
-    constant clk_period : time := 1 ns;
+    -- Clock period for the test bench, 2.5ns is roughly 400MHz (Artix 7 clock speed is 450MHz or a 2.2222ns repeating clock period)
+    constant clk_period : time := 2.5 ns;
 
 begin
 
@@ -76,18 +82,32 @@ begin
     end process;
 
     -- Stimulus process
-    stim_proc: process
+    stim_proc: process is 
+        variable seed1 : positive := 1;
+        variable seed2 : positive := 1;
+        variable x : real;
+        variable y : integer;
+        variable is_sorted : boolean := true; 
     begin
-        -- Apply input stimuli
-        data <= (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16);
+        -- random integer generation from https://stackoverflow.com/a/53353673/7537973
+        for i in 0 to N-1 loop
+            uniform(seed1, seed2, x);
+            y := integer(floor((x-0.5)*2.0**31));
+            data(i) <= y;
+        end loop;
 
         wait until done = '1';
 
         -- Check the outputs
-        assert sorted = (16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1)
+        for i in 0 to N-2 loop
+            if(sorted(i) < sorted(i+1)) then
+                is_sorted := false;
+            end if;
+        end loop;
+        assert is_sorted
             report "Incorrect sorting!"
             severity error;
-
+        report "Correct sorting!";
         wait;
     end process;
 end;
