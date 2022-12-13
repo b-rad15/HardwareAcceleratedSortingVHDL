@@ -20,7 +20,7 @@
 
 Package Types is 
     type input_array is array (natural range <>) of integer; --integer array with unconstrained range, can be constrained later
-    constant scale_max : positive := 256;
+    constant scale_max : positive := 32;
 End Types;
 
 library IEEE;
@@ -65,7 +65,7 @@ architecture Behavioral of bitonic_sort is
             when 4096 => return 12;
             when 8192 => return 13;
             when 16384 => return 14;
-            when others => return 15;
+            when others => return 0;
         end case;
     end log_base2;
     signal items : input_array(0 to N-1);
@@ -141,7 +141,60 @@ begin
                     size <= N;
                     next_state <= SORT;
                 when SORT =>
-                    bitonic_swap_procedure(sort_count, sub_sort_count);
+                    case sort_count is
+                        when 1 =>
+                            case sub_sort_count is
+                                when 1 =>
+                                    bitonic_swap_procedure(sort_count, sub_sort_count);
+                                when others =>
+                            end case;
+                        when 2 =>
+                            case sub_sort_count is
+                                when 1 =>
+                                    bitonic_swap_procedure(sort_count, sub_sort_count);
+                                when 2 =>
+                                    bitonic_swap_procedure(sort_count, sub_sort_count);
+                                when others =>
+                            end case;
+                        when 3 =>
+                            case sub_sort_count is
+                                when 1 =>
+                                    bitonic_swap_procedure(sort_count, sub_sort_count);
+                                when 2 =>
+                                    bitonic_swap_procedure(sort_count, sub_sort_count);
+                                when 3 =>
+                                    bitonic_swap_procedure(sort_count, sub_sort_count);
+                                when others =>
+                            end case;
+                        when 4 =>
+                            case sub_sort_count is
+                                when 1 =>
+                                    bitonic_swap_procedure(sort_count, sub_sort_count);
+                                when 2 =>
+                                    bitonic_swap_procedure(sort_count, sub_sort_count);
+                                when 3 =>
+                                    bitonic_swap_procedure(sort_count, sub_sort_count);
+                                when 4 =>
+                                    bitonic_swap_procedure(sort_count, sub_sort_count);
+                                when others =>
+                            end case;
+                        when 5 =>
+                            case sub_sort_count is
+                                when 1 =>
+                                    bitonic_swap_procedure(sort_count, sub_sort_count);
+                                when 2 =>
+                                    bitonic_swap_procedure(sort_count, sub_sort_count);
+                                when 3 =>
+                                    bitonic_swap_procedure(sort_count, sub_sort_count);
+                                when 4 =>
+                                    bitonic_swap_procedure(sort_count, sub_sort_count);
+                                when 5 =>
+                                    bitonic_swap_procedure(sort_count, sub_sort_count);
+                                when others =>
+                            end case;
+                        when others =>
+                    end case;
+--                    bitonic_swap_procedure(sort_count, sub_sort_count);
                     if sub_sort_count = 1 then
                         sub_sort_count <= sort_count + 1;
                         sort_count <= sort_count + 1;
