@@ -20,7 +20,7 @@
 
 Package Types is 
     type input_array is array (natural range <>) of integer; --integer array with unconstrained range, can be constrained later
-    constant scale_max : positive := 32;
+    constant scale_max : positive := 32;--defines the number of inputs to the system
 End Types;
 
 library IEEE;
@@ -38,15 +38,15 @@ entity bitonic_sort is
         N       : positive := scale_max  -- Number of items to sort
     );
     port (
-        clk     : in  std_logic;
-        data    : in  input_array(0 to N-1);
-        sorted  : out input_array(0 to N-1);
-        done    : out std_logic := '0'
+        clk     : in  std_logic;--clock signal, program will run on rising edge of clock
+        data    : in  input_array(0 to N-1); --input data to be sorted, will not be modified by entity
+        sorted  : out input_array(0 to N-1); --sorted out data, will not be populated until 1 clock passes and will be sorted on rising edge of done
+        done    : out std_logic := '0' -- signal signifying whether the "sorted" signal is sorted or not
     );
 end bitonic_sort;
 
 architecture Behavioral of bitonic_sort is
-    -- log base 2 lookup table
+    -- log base 2 lookup table, required as built in log function is real number arithmetic and unsynthesizable
    function log_base2(n : positive) return natural is
    begin
         case n is
@@ -68,34 +68,32 @@ architecture Behavioral of bitonic_sort is
             when others => return 0;
         end case;
     end log_base2;
-    signal items : input_array(0 to N-1);
-    type state_type is (INIT, SORT, FINISHED);
-    signal state, next_state : state_type;
-
-    signal dir : std_logic;
-    signal size : positive;
+    signal items : input_array(0 to N-1); -- signal to be written to by the functions
+    type state_type is (INIT, SORT, FINISHED); --possible states for the main finite state machine
+    signal state, next_state : state_type; --use and extra next_state variable to store the next state while still operating on current state
     
-    signal sort_count : positive := 1;
-    signal sub_sort_count : positive  := 1;
-    constant scale : positive := log_base2(N); -- log2(N)
+    signal sort_count : positive := 1; -- signal to store the main state of the sort function, from 1 to log(scale_max)
+    signal sub_sort_count : positive  := 1; --signal to store the sub state of the main state, from 1 to sort_count
+    constant scale : positive := log_base2(N); -- log2(N), used to find the total number of states the function will go through
     signal count : integer := 0;
     
+    -- Helper function so exponential function can be modified wihtout needing to update many places in code
     -- TODO: Investigate faster alternative using left shifts
     function power_of_2(power : natural) return positive is
     variable result : positive;
     begin
-        return  2**power;
+        return  2**power; -- this is an integer function and therefore safe for synthesis
    end power_of_2;
 begin
 
     process (clk)
         
-        variable sort_exp : positive;
-        variable sort_minus1_exp : positive;
-        variable sub_sort_exp : positive;
-        variable sub_sort_minus1_exp : positive;
+        variable sort_exp : positive; -- will store 2^sort_count, helper variable
+        variable sort_minus1_exp : positive; -- will store 2^(sort_count-1), helper variable
+        variable sub_sort_exp : positive; -- will store 2^sub_sort_count, helper variable
+        variable sub_sort_minus1_exp : positive; -- will store 2^(sub_sort_count-1), helper variable
         -- check if array is in correct order, index_1 must be less than index_2
-        -- increasing is '1' if index_1 should be less than index_2 and '0' if index_1 should be greater than index_2
+        -- increasing is '1' if the item at position index_1 should be less than the item at position index_2 and '0' if the item at position index_1 should be greater than the item at position index_2
         procedure check_and_swap(index_1 : natural; index_2 : natural; increasing : boolean) is
         begin
             if increasing then --check if increasing, swap if index_1 > index_2
@@ -117,10 +115,10 @@ begin
             variable sub_sort_exp       : positive := power_of_2(sub_sort_count);
             variable sub_sort_minus1_exp: positive := sub_sort_exp/2;
         begin 
-            for i in 0 to N/sort_exp-1 loop --blue/green boxes
-                for j in 0 to sort_exp/sub_sort_exp-1 loop --red boxes
-                    for k in i*sort_exp+j*sub_sort_exp to i*sort_exp+j*sub_sort_exp+sub_sort_minus1_exp-1 loop --line low points
-                        check_and_swap(k, k+sub_sort_minus1_exp, ((N/sort_exp-i) mod 2) = 0);
+            for i in 0 to N/sort_exp-1 loop --blue/green boxes in diagram, starts counting from 0 to scale_max/2 then is cut in half each sort_state
+                for j in 0 to sort_exp/sub_sort_exp-1 loop --red boxes in the diagram, creates one box in the first sub_sort state then doubles each sub_state iteration ending at 0 to 2**(sort_state-1)
+                    for k in i*sort_exp+j*sub_sort_exp to i*sort_exp+j*sub_sort_exp+sub_sort_minus1_exp-1 loop --line low points in the diagram, multiply i and j by 2**sort_state and 2**sub_sort_state respectively to increase their step.
+                        check_and_swap(k, k+sub_sort_minus1_exp, ((N/sort_exp-i) mod 2) = 0); --call the swap function given line low point and comparing it to the element 2**(sub_sort_state-1) above it, Alternate decreasing or increasing starting from the top and counting down
                     end loop;
                 end loop;
             end loop;
@@ -129,18 +127,12 @@ begin
         
     begin
         if rising_edge(clk) then
-            sort_exp := power_of_2(sort_count);
-            sort_minus1_exp := sort_exp/2;
-            sub_sort_exp := power_of_2(sub_sort_count);
-            sub_sort_minus1_exp := sub_sort_exp/2;
-            state <= next_state;
-            case state is
-                when INIT =>
+            state <= next_state;-- assign state to next_state that may or may not have been assigned last iteration
+            case state is --define main finite state machine
+                when INIT => --initialize array variable and change state
                     items <= data;
-                    dir <= '1';
-                    size <= N;
                     next_state <= SORT;
-                when SORT =>
+                when SORT => --main state for sorting the array, must have strongly defined sort_count and sub_sort_count or function will not be synthesizable
                     case sort_count is
                         when 1 =>
                             case sub_sort_count is
@@ -193,203 +185,20 @@ begin
                                 when others =>
                             end case;
                         when others =>
-                    end case;
---                    bitonic_swap_procedure(sort_count, sub_sort_count);
-                    if sub_sort_count = 1 then
+                    end case;--more states can be added to this in order to increase maximum sorting size
+                    if sub_sort_count = 1 then --check if in the final sub_sort state, if so sorting of this state is over and we must increase the state by one and reset sub_sort state
                         sub_sort_count <= sort_count + 1;
                         sort_count <= sort_count + 1;
-                        if sort_count = scale then
+                        if sort_count = scale then --if the in the final sub state of the final sort state then switch to finished state
                             next_state <= FINISHED;
                         end if;
-                    else
+                    else --otherwise move to the next sub_sort_state
                         sub_sort_count <= sub_sort_count - 1;
                     end if;
-                    --Code intentionally commented out, synthesis fails and this may be the key to fixing it
---                    case sort_count is
---                        when 1 =>
---                            case sub_sort_count is
---                                when 1 =>
-----                                    for i in 0 to N/(sort_exp)-1 loop
-----                                        for j in 0 to power_of_2(sort_count-1)-1 loop -- 0
-----                                            check_and_swap(2*sort_count*i+j, 2*sort_count*i+sub_sort_minus1_exp+j, (i mod 2) = 0); -- increasing if even index
-----                                        end loop;
-----                                    end loop;
---                                    for i in 0 to N/sort_exp-1 loop --blue/green boxes
---                                        for j in 0 to sort_exp/sub_sort_exp-1 loop --red boxes
---                                            for k in i*sort_exp+j*sub_sort_exp to i*sort_exp+j*sub_sort_exp+sub_sort_minus1_exp-1 loop --line low points
---                                                check_and_swap(k, k+sub_sort_minus1_exp, ((N/sort_exp-i) mod 2) = 0);
---                                            end loop;
---                                        end loop;
---                                    end loop;
---                                    sub_sort_count <= sort_count + 1;
---                                    sort_count <= sort_count + 1;
---                                when others =>
---                            end case;
---                        when 2 =>
---                            case sub_sort_count is
---                                when 2 =>
---                                    for i in 0 to N/sort_exp-1 loop --blue/green boxes
---                                        for j in 0 to sort_exp/sub_sort_exp-1 loop --red boxes
---                                            for k in i*sort_exp+j*sub_sort_exp to i*sort_exp+j*sub_sort_exp+sub_sort_minus1_exp-1 loop --line low points
---                                                check_and_swap(k, k+sub_sort_minus1_exp, ((N/sort_exp-i) mod 2) = 0);
---                                            end loop;
---                                        end loop;
---                                    end loop;
-----                                    for i in 0 to N/(sort_exp)-1 loop
-----                                        for j in 0 to sort_minus1_exp-1 loop -- 0 and 1
-----                                            check_and_swap(2*sort_count*i+j, 2*sort_count*i+j+sub_sort_minus1_exp, (i mod 2) = 0); -- increasing if even index
-----                                        end loop;
-----                                    end loop;
---                                    sub_sort_count <= sub_sort_count - 1; 
---                                when 1 =>
---                                    for i in 0 to N/sort_exp-1 loop --blue/green boxes
---                                        for j in 0 to sort_exp/sub_sort_exp-1 loop --red boxes
---                                            for k in i*sort_exp+j*sub_sort_exp to i*sort_exp+j*sub_sort_exp+sub_sort_minus1_exp-1 loop --line low points
---                                                check_and_swap(k, k+sub_sort_minus1_exp, ((N/sort_exp-i) mod 2) = 0);
---                                            end loop;
---                                        end loop;
---                                    end loop;
-----                                    for i in 0 to N/(sort_exp)-1 loop
-----                                        for j in 0 to sort_minus1_exp-1 loop -- 0 and 1
-----                                            check_and_swap(2*sort_count*i+j, 2*sort_count*i+sub_sort_minus1_exp+j, (i mod 2) = 0); -- increasing if even index
-----                                        end loop;
-----                                    end loop;
---                                    sub_sort_count <= sort_count + 1;
---                                    sort_count <= sort_count + 1;                                
---                                when others => -- do nothing
---                            end case;    
---                        when 3 =>
---                            case sub_sort_count is
---                                when 3 =>
---                                    for i in 0 to N/sort_exp-1 loop --blue/green boxes
---                                        for j in 0 to sort_exp/sub_sort_exp-1 loop --red boxes
---                                            for k in i*sort_exp+j*sub_sort_exp to i*sort_exp+j*sub_sort_exp+sub_sort_minus1_exp-1 loop --line low points
---                                                check_and_swap(k, k+sub_sort_minus1_exp, ((N/sort_exp-i) mod 2) = 0);
---                                            end loop;
---                                        end loop;
---                                    end loop;
-----                                    for i in 0 to N/8-1 loop
-----                                        check_and_swap(8*i, 8*i+4, (i mod 2) = 0); -- increasing if even index
-----                                        check_and_swap(8*i+1, 8*i+5, (i mod 2) = 0); -- increasing if even index
-----                                        check_and_swap(8*i+2, 8*i+6, (i mod 2) = 0); -- increasing if even index
-----                                        check_and_swap(8*i+3, 8*i+7, (i mod 2) = 0); -- increasing if even index
-----                                    end loop;
---                                    sub_sort_count <= sub_sort_count - 1; 
---                                when 2 =>
---                                    for i in 0 to N/sort_exp-1 loop --blue/green boxes
---                                        for j in 0 to sort_exp/sub_sort_exp-1 loop --red boxes
---                                            for k in i*sort_exp+j*sub_sort_exp to i*sort_exp+j*sub_sort_exp+sub_sort_minus1_exp-1 loop --line low points
---                                                check_and_swap(k, k+sub_sort_minus1_exp, ((N/sort_exp-i) mod 2) = 0);
---                                            end loop;
---                                        end loop;
---                                    end loop;
-----                                    for i in 0 to N/8-1 loop
-----                                        check_and_swap(8*i, 8*i+2, (i mod 2) = 0); -- increasing if even index
-----                                        check_and_swap(8*i+1, 8*i+3, (i mod 2) = 0); -- increasing if even index
-----                                        check_and_swap(8*i+4, 8*i+6, (i mod 2) = 0); -- increasing if even index
-----                                        check_and_swap(8*i+5, 8*i+7, (i mod 2) = 0); -- increasing if even index
-----                                    end loop;
---                                    sub_sort_count <= sub_sort_count - 1; 
---                                when 1 =>
---                                    for i in 0 to N/sort_exp-1 loop --blue/green boxes
---                                        for j in 0 to sort_exp/sub_sort_exp-1 loop --red boxes
---                                            for k in i*sort_exp+j*sub_sort_exp to i*sort_exp+j*sub_sort_exp+sub_sort_minus1_exp-1 loop --line low points
---                                                check_and_swap(k, k+sub_sort_minus1_exp, ((N/sort_exp-i) mod 2) = 0);
---                                            end loop;
---                                        end loop;
---                                    end loop;
-----                                    for i in 0 to N/(sort_exp)-1 loop
-----                                        for j in 0 to sort_minus1_exp-1 loop -- 0 and 1
-----                                            check_and_swap(sort_exp*i+2*j, sort_exp*i+sub_sort_count+2*j, (i mod 2) = 0); -- increasing if even index
-----                                        end loop;
-----                                    end loop;
---                                    sub_sort_count <= sort_count + 1;
---                                    sort_count <= sort_count + 1;
---                                when others => -- do nothing
---                            end case;   
---                        when 4 =>
---                            case sub_sort_count is
---                                when 4 =>
---                                    for i in 0 to N/sort_exp-1 loop --blue/green boxes
---                                        for j in 0 to sort_exp/sub_sort_exp-1 loop --red boxes
---                                            for k in i*sort_exp+j*sub_sort_exp to i*sort_exp+j*sub_sort_exp+sub_sort_minus1_exp-1 loop --line low points
---                                                check_and_swap(k, k+sub_sort_minus1_exp, ((N/sort_exp-i) mod 2) = 0);
---                                            end loop;
---                                        end loop;
---                                    end loop;
-----                                    for i in 0 to N/2-1 loop
-----                                        check_and_swap(i, i+8, false); -- increasing if even index
-----                                    end loop;
---                                    sub_sort_count <= sub_sort_count - 1; 
---                                when 3 => 
---                                    for i in 0 to N/sort_exp-1 loop --blue/green boxes
---                                        for j in 0 to sort_exp/sub_sort_exp-1 loop --red boxes
---                                            for k in i*sort_exp+j*sub_sort_exp to i*sort_exp+j*sub_sort_exp+sub_sort_minus1_exp-1 loop --line low points
---                                                check_and_swap(k, k+sub_sort_minus1_exp, ((N/sort_exp-i) mod 2) = 0);
---                                            end loop;
---                                        end loop;
---                                    end loop;
-----                                    for i in 0 to N/16-1 loop
-----                                        check_and_swap(16*i, 16*i+4, false); -- increasing if even index
-----                                        check_and_swap(16*i+1, 16*i+5, false); -- increasing if even index
-----                                        check_and_swap(16*i+2, 16*i+6, false); -- increasing if even index
-----                                        check_and_swap(16*i+3, 16*i+7, false); -- increasing if even index
-----                                        check_and_swap(16*i+8, 16*i+12, false); -- increasing if even index
-----                                        check_and_swap(16*i+9, 16*i+13, false); -- increasing if even index
-----                                        check_and_swap(16*i+10, 16*i+14, false); -- increasing if even index
-----                                        check_and_swap(16*i+11, 16*i+15, false); -- increasing if even index
-----                                    end loop;
---                                    sub_sort_count <= sub_sort_count - 1; 
---                                when 2 =>
---                                    for i in 0 to N/sort_exp-1 loop --blue/green boxes
---                                        for j in 0 to sort_exp/sub_sort_exp-1 loop --red boxes
---                                            for k in i*sort_exp+j*sub_sort_exp to i*sort_exp+j*sub_sort_exp+sub_sort_minus1_exp-1 loop --line low points
---                                                check_and_swap(k, k+sub_sort_minus1_exp, ((N/sort_exp-i) mod 2) = 0);
---                                            end loop;
---                                        end loop;
---                                    end loop;
-----                                    for i in 0 to N/16-1 loop -- blue/green boxes
-----                                        for j in i to N/4-1 loop -- red boxes
-----                                            for k in j*4 to j*4+(N/8-1) loop -- line low points
-----                                                check_and_swap(k, k+2, false); -- increasing if even index
-----                                            end loop;
-----                                        end loop;
-----                                    end loop;
---                                    sub_sort_count <= sub_sort_count - 1; 
---                                when 1 =>
---                                    for i in 0 to N/sort_exp-1 loop --blue/green boxes
---                                        for j in 0 to sort_exp/sub_sort_exp-1 loop --red boxes
---                                            for k in i*sort_exp+j*sub_sort_exp to i*sort_exp+j*sub_sort_exp+sub_sort_minus1_exp-1 loop --line low points
---                                                check_and_swap(k, k+sub_sort_minus1_exp, ((N/sort_exp-i) mod 2) = 0);
---                                            end loop;
---                                        end loop;
---                                    end loop;
-----                                    for i in 0 to N/(sort_exp)-1 loop
-----                                        for j in 0 to power_of_2(sort_count-1)-1 loop -- 0 and 1
-----                                            check_and_swap(sort_exp*i+2*j, sort_exp*i+sub_sort_count+2*j, false); -- increasing if even index
-----                                        end loop;
-----                                    end loop;
-----                                    for i in 0 to N/sort_exp-1 loop --blue/green boxes
-----                                        for j in i to N/sub_sort_exp-1 loop --red boxes
-----                                            for k in j*sub_sort_exp to j*sub_sort_exp+(N/sort_exp-1) loop --line low points
-----                                                check_and_swap(k, k+1, false);
-----                                            end loop;
-----                                        end loop;
-----                                    end loop; 
---                                    sub_sort_count <= sort_count + 1;
---                                    sort_count <= sort_count + 1;
---                                    state <= FINISHED;
---                                when others => -- do nothing     
---                                    next_state <= FINISHED;                  
---                            end case; 
---                        when others => -- do nothing
---                    end case;
                 when FINISHED =>
-                    done <= '1';
-                    
+                    done <= '1';--signal that the entity is done sorting and can be read from
             end case;
         end if;
     end process;
-
-    sorted <= items;
+    sorted <= items;--write out to the sorted signal every iteration
 end architecture;

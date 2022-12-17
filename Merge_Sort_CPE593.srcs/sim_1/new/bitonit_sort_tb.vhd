@@ -1,12 +1,12 @@
 ----------------------------------------------------------------------------------
--- Company: 
--- Engineer: 
+-- Company: Stevens CPE 593 Group Hardware Accelerated Sorting
+-- Engineer: Bradleu O'Cpnnell, Omkar Patol, Nirmohi Patel
 -- 
 -- Create Date: 12/03/2022 05:50:25 PM
 -- Design Name: 
--- Module Name: test_bench_merge - Behavioral
--- Project Name: 
--- Target Devices: 
+-- Module Name: bitonic_sort_tb - Behavioral
+-- Project Name: Hardware Accelerated Sorting
+-- Target Devices: Artix 7
 -- Tool Versions: 
 -- Description: 
 -- 
@@ -72,7 +72,7 @@ begin
             sorted => sorted
         );
 
-    -- Clock process definitions
+    -- Clock process definitions, needed to drive the entity
     clk_process :process
     begin
         clk <= '0';
@@ -81,13 +81,13 @@ begin
         wait for clk_period/2;
     end process;
 
-    -- Stimulus process
+    -- Stimulus process, actually calls the entity and then reads the data after it is finished
     stim_proc: process is 
-        variable seed1 : positive := 1;
+        variable seed1 : positive := 1; -- random seeds, purely for testing so true random would be detrimental
         variable seed2 : positive := 1;
-        variable x : real;
-        variable y : integer;
-        variable is_sorted : boolean := true; 
+        variable x : real; --variable to save random float to
+        variable y : integer; --variable to store integer after converting float to 32 bit signed range
+        variable is_sorted : boolean := true; --whether the array was sorted correctly or not
     begin
         -- random integer generation from https://stackoverflow.com/a/53353673/7537973
         for i in 0 to N-1 loop
@@ -96,15 +96,15 @@ begin
             data(i) <= y;
         end loop;
 
-        wait until done = '1';
+        wait until done = '1'; --wait until done signal is raised
 
-        -- Check the outputs
+        -- Check the outputs, if any element is greater than the one below it then it isn't sorted correctly
         for i in 0 to N-2 loop
             if(sorted(i) < sorted(i+1)) then
                 is_sorted := false;
             end if;
         end loop;
-        assert is_sorted
+        assert is_sorted --output sort result to console
             report "Incorrect sorting!"
             severity error;
         report "Correct sorting!";
